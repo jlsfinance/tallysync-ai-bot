@@ -554,45 +554,30 @@ async function launchBot(): Promise<void> {
     // Polling mode (Railway / local)
     logger.info('Starting bot in POLLING mode');
 
-    // First, drop any stale webhook/polling session
-    try {
-      await bot.telegram.deleteWebhook({ drop_pending_updates: true });
-    } catch (_) { /* ignore */ }
-
-    // Random delay to avoid race with stale instances
-    await new Promise(r => setTimeout(r, 2000 + Math.random() * 4000));
-
-    // Launch with retry on 409 conflict (retry forever, never crash)
-    let attempt = 0;
-    while (true) {
-      attempt++;
-      try {
-        const pollTimeout = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('poll_timeout')), 15000)
-        );
-        await Promise.race([
-          bot.launch({ allowedUpdates: ['message', 'callback_query'] }),
-          pollTimeout
-        ]);
-        console.log('✅ Bot polling started successfully');
-        logger.info('Bot polling started successfully');
-        return;
-      } catch (err: any) {
+    // Start polling in background - NEVER block startup
+    bot.launch({ allowedUpdates: ['message', 'callback_query'] })
+      .then(() => {
+        console.log('✅ Bot polling connected successfully');
+        logger.info('Bot polling connected');
+      })
+      .catch((err: any) => {
         const errMsg = String(err?.message || err);
-        if (errMsg === 'poll_timeout') {
-          console.log('⏳ Polling timeout - this is normal on first start, continuing...');
-          // The launch might succeed after timeout - just return
-          return;
-        }
-        const is409 = errMsg.includes('409');
-        const waitMs = is409 ? Math.min(attempt * 3000, 30000) : 5000;
-        logger.warn(is409 ? 'Polling conflict (409), retrying' : 'Polling error, retrying', {
-          attempt, waitMs, error: errMsg
-        });
-        console.log(`🔄 Retry #${attempt} in ${waitMs}ms`);
-        await new Promise(r => setTimeout(r, waitMs));
-      }
-    }
+        console.log(`⚠️ Polling error (non-fatal): ${errMsg.slice(0, 100)}`);
+        logger.warn('Polling error (continuing)', { error: errMsg });
+        // Retry after 30 seconds
+        setTimeout(() => {
+          console.log('🔄 Retrying polling connection...');
+          bot.launch({ allowedUpdates: ['message', 'callback_query'] })
+            .then(() => {
+              console.log('✅ Bot polling connected (retry)');
+              logger.info('Bot polling connected (retry)');
+            })
+            .catch(() => {});
+        }, 30000);
+      });
+
+    console.log('✅ Bot started (polling in background)');
+    logger.info('Bot started (polling in background)');
   }
 }
 
