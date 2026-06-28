@@ -80,6 +80,11 @@ export interface ConversationContext {
   lastInteractionAt?: number;
   /** Number of interactions in this session */
   interactionCount?: number;
+  /** Company ID — selected company context */
+  companyId?: string;
+  /** Company Name — selected company context */
+  companyName?: string;
+
   /** Arbitrary extra data (flexible field for flow-specific data) */
   extra?: Record<string, any>;
 }

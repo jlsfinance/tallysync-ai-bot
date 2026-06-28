@@ -44,6 +44,12 @@ import {
   onCustomerPartySelected,
   onCustomerAction,
 } from './handlers/customer';
+import {
+  companyCommand,
+  showCompanyPicker,
+  onCompanySelected,
+  getActiveCompanies,
+} from './handlers/company';
 
 // ---------------------------------------------------------------------------
 // Bot setup
@@ -63,6 +69,47 @@ const bot: Telegraf<Context<Update>> = new Telegraf(BOT_TOKEN);
 
 initSessionCleanup();
 configureFuzzySearch(config.SUPABASE_SERVICE_KEY);
+
+// ---------------------------------------------------------------------------
+// Company check middleware — ensures company is selected before commands
+// ---------------------------------------------------------------------------
+
+bot.use(async (ctx, next) => {
+  const chatId = ctx.chat?.id;
+  if (!chatId) return next();
+
+  // Get session to check company selection
+  const { getSession } = await import('./services/conversation');
+  const session = getSession(chatId);
+
+  // Only enforce for commands (not /start, /help, /company)
+  const text = ctx.message && 'text' in ctx.message ? ctx.message.text : '';
+  const isTextCommand = typeof text === 'string' && text.startsWith('/');
+  const cmdName = isTextCommand ? text.split(' ')[0].toLowerCase() : '';
+  const whitelistedCmds = ['/start', '/help', '/company', '/cancel'];
+
+  // Skip check for: whitelisted commands, callback queries, non-command text
+  if (
+    !isTextCommand ||
+    ctx.updateType === 'callback_query' ||
+    whitelistedCmds.includes(cmdName)
+  ) {
+    return next();
+  }
+
+  // If no company selected, show picker
+  if (!session.companyId) {
+    const { showCompanyPicker } = await import('./handlers/company');
+    await showCompanyPicker(ctx);
+    return; // Don't call next() — block the command
+  }
+
+  return next();
+});
+
+// ---------------------------------------------------------------------------
+// Logger middleware
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Logger middleware
@@ -123,6 +170,7 @@ bot.command('invoice', invoiceCommand);
 bot.command('ledger', ledgerCommand);
 bot.command('stock', stockCommand);
 bot.command('customer', customerCommand);
+bot.command('company', companyCommand);
 
 // ---------------------------------------------------------------------------
 // Callback Query handler — centralised dispatch for all inline keyboards
@@ -148,6 +196,22 @@ bot.on('callback_query', async (ctx) => {
 
   if (callbackData === 'help') {
     return helpCommand(ctx);
+  }
+
+  if (callbackData === 'company') {
+    return showCompanyPicker(ctx, '🏢 *Switch Company*\n\nSelect a company to switch to:');
+  }
+
+  if (callbackData.startsWith('comp_select:')) {
+    const companyId = callbackData.slice('comp_select:'.length);
+    return onCompanySelected(ctx, companyId);
+  }
+
+
+
+  if (callbackData.startsWith('comp_select:')) {
+    const companyId = callbackData.slice('comp_select:'.length);
+    return onCompanySelected(ctx, companyId);
   }
 
   if (callbackData === 'dashboard') {

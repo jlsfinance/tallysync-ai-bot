@@ -1,6 +1,7 @@
 import { Context, Markup } from 'telegraf';
 import logger from '../logger';
-import { clearSession } from '../services/conversation';
+import { clearSession, getSession } from '../services/conversation';
+import { showCompanyPicker, getActiveCompanies } from './company';
 
 const BUSINESS_NAME = 'TallyOnMobile';
 const WELCOME_EMOJI = '🤖';
@@ -25,16 +26,42 @@ function mainKeyboard() {
 
 /**
  * /start – Welcome message with business branding and main menu.
+ * If no company is selected yet, shows company picker first.
  */
 export async function startCommand(ctx: Context): Promise<void> {
+  const chatId = ctx.chat!.id;
   const firstName = ctx.from?.first_name ?? 'User';
 
-  clearSession(ctx.chat!.id);
+  clearSession(chatId);
+
+  // Check if there are multiple companies
+  const companies = await getActiveCompanies();
+
+  if (companies.length === 0) {
+    await ctx.replyWithMarkdown('⚠️ No companies found with data. Please sync data from TallyOnMobile first.');
+    return;
+  }
+
+  if (companies.length === 1) {
+    // Auto-select single company
+    const { storeSession } = await import('../services/conversation');
+    storeSession(chatId, {
+      companyId: companies[0].id,
+      companyName: companies[0].name,
+    });
+  }
+
+  const session = getSession(chatId);
+  const companyMsg = session.companyName
+    ? `🏢 *Company:* ${session.companyName}`
+    : '';
 
   const welcomeText = [
     `${WELCOME_EMOJI} *Welcome to ${BUSINESS_NAME}!*`,
     '',
     `Hello ${firstName}! I'm your AI-powered business assistant.`,
+    companyMsg,
+    '',
     'I can help you with:',
     '',
     '📊  **Dashboard** — Today\'s sales, purchases, collections & summaries',
@@ -52,7 +79,16 @@ export async function startCommand(ctx: Context): Promise<void> {
     'Select an option below to get started 👇',
   ].join('\n');
 
-  await ctx.replyWithMarkdown(welcomeText, mainKeyboard());
+  const buttons = mainKeyboard();
+
+  // If multiple companies, add company switch button
+  if (companies.length > 1 && !session.companyName) {
+    // Show company picker first before main menu
+    await showCompanyPicker(ctx);
+    return;
+  }
+
+  await ctx.replyWithMarkdown(welcomeText, buttons);
 }
 
 /**
@@ -72,6 +108,7 @@ export async function helpCommand(ctx: Context): Promise<void> {
     '`/ledger <party>` — Get party-wise ledger PDF',
     '`/stock <item>` — Check stock details',
     '`/customer <party>` — Party info & balance',
+    '`/company` — View / switch current company',
     '',
     '━━━━━━━━━━━━━━━━━━',
     '*Natural Language Examples:*',
@@ -101,6 +138,7 @@ export async function helpCommand(ctx: Context): Promise<void> {
   await ctx.replyWithMarkdown(helpText, {
     reply_markup: {
       inline_keyboard: [
+        [{ text: '🏢 Change Company', callback_data: 'company' }],
         [{ text: '🏠 Main Menu', callback_data: 'start' }],
       ],
     },
