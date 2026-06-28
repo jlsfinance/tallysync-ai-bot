@@ -312,11 +312,99 @@ async function runTests() {
     for (const [input, expected] of tests) {
       const result = escapeMd(input);
       assert(result === expected, `escapeMd("${input}") = "${result}", expected "${expected}"`);
-    }
-    console.log(`     ✅ ${tests.length} escape tests passed`);
-  })();
+      }
+      console.log(`     ✅ ${tests.length} escape tests passed`);
+      })();
 
-  // ── Summary ──
+      // ── 7. Smart Suggestions Tests ──
+    console.log('\n💡 Smart Suggestion Tests:');
+
+    await test('smartSuggestParty returns FuzzyMatchResult[]', async () => {
+      const { smartSuggestParty, buildSuggestionMessage } = require('./dist/services/fuzzySearch');
+      const results = await smartSuggestParty('test', 3);
+      assert(Array.isArray(results), 'Expected array');
+      console.log(`     Found ${results.length} suggestions for "test"`);
+    })();
+
+    await test('buildSuggestionMessage returns formatted string or null', () => {
+      const { buildSuggestionMessage, fuzzySearch } = require('./dist/services/fuzzySearch');
+      // Test with empty suggestions
+      const emptyMsg = buildSuggestionMessage('test', []);
+      assert(emptyMsg === null, 'Expected null for empty suggestions');
+      // Test with mock suggestions
+      const mockSuggestions = [
+        { item: { name: 'Test Party', id: 1 }, score: 99, method: 'exact', matchedField: 'name', highlighted: 'Test Party' },
+      ];
+      const msg = buildSuggestionMessage('test', mockSuggestions);
+      assert(msg !== null, 'Expected non-null message');
+      assert(msg.includes('Test Party'), 'Expected party name in message');
+      assert(msg.includes('Did you mean'), 'Expected suggestion text');
+      console.log('     ✅ Suggestion message format verified');
+    })();
+
+    // ── 8. Groq AI Integration Tests (if API key available) ──
+    console.log('\n🤖 Groq AI Tests:');
+    const groqKey = config.GROQ_API_KEY || process.env.GROQ_API_KEY;
+  
+    await test('Groq AI module loads correctly', () => {
+      const groq = require('./dist/services/groqAi');
+      assert(typeof groq.isGroqAvailable === 'function', 'isGroqAvailable should be a function');
+      assert(typeof groq.aiSuggestParties === 'function', 'aiSuggestParties should be a function');
+      assert(typeof groq.aiDetectIntent === 'function', 'aiDetectIntent should be a function');
+      console.log(`     ${groqKey ? '✅ GROQ_API_KEY is set' : '⚠️ GROQ_API_KEY not set — AI features disabled'}`);
+    })();
+
+    if (groqKey) {
+      await test('Groq AI — aiDetectIntent works with "Bhoparam nimbawas bill bhej"', async () => {
+        const { aiDetectIntent } = require('./dist/services/groqAi');
+        try {
+          const result = await aiDetectIntent('Bhoparam nimbawas bill bhej');
+          if (result) {
+            assert(result.intent === 'invoice' || result.intent === 'ledger', `Expected invoice/ledger intent, got ${result.intent}`);
+            if (result.partyName) {
+              console.log(`     ✅ Detected party: "${result.partyName}"`);
+            }
+            console.log(`     ✅ Intent: ${result.intent}, confidence: ${result.confidence}`);
+          } else {
+            console.log('     ⚠️ aiDetectIntent returned null (API may be rate limited)');
+          }
+        } catch (e) {
+          assert(false, `aiDetectIntent threw: ${e.message}`);
+        }
+      })();
+
+      await test('Groq AI — aiSuggestParties returns suggestions for misspelled name', async () => {
+        const { aiSuggestParties } = require('./dist/services/groqAi');
+        try {
+          // Fetch actual parties first
+          const supabase = createClient(config.SUPABASE_URL, config.SUPABASE_SERVICE_KEY, {
+            realtime: { transport: WebSocket },
+          });
+          const { data } = await supabase
+            .from('ledgers')
+            .select('name')
+            .eq('is_deleted', false)
+            .limit(50);
+          const partyNames = (data || []).map(p => p.name);
+        
+          if (partyNames.length > 0) {
+            // Try a deliberately misspelled name
+            const suggestions = await aiSuggestParties('bhoparm nimbawa', partyNames, 3);
+            console.log(`     ${suggestions.length > 0 
+              ? `✅ Got ${suggestions.length} suggestions: ${suggestions.map(s => s.suggestedName).join(', ')}` 
+              : '⚠️ No AI suggestions returned'}`);
+          } else {
+            console.log('     ⚠️ No parties in DB to test suggestions');
+          }
+        } catch (e) {
+          console.log(`     ⚠️ AI suggestion test skipped (Groq error: ${e.message})`);
+        }
+      })();
+    } else {
+      console.log('     ⏭️ Skipping AI tests (no GROQ_API_KEY)');
+    }
+
+    // ── Summary ──
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
   if (failed === 0) {
     console.log(`🎉 ALL ${passed} TESTS PASSED! Ready to deploy.`);
