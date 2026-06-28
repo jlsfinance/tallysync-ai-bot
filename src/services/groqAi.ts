@@ -1,10 +1,9 @@
 /**
  * Groq AI Service
  *
- * Integrates Groq's free Llama 3.1 8B model for:
- * 1. Smart party name suggestions when fuzzy search fails
- * 2. Correcting misspelled party names
- * 3. Natural language understanding enhancement
+ * Integrates Groq's free Llama 3.1 8B model to serve as the PRIMARY
+ * brain for the bot — understands ANY user input in Hindi/English/Hinglish,
+ * extracts intent+entities, and generates conversational responses.
  */
 import Groq from 'groq-sdk';
 import logger from '../logger';
@@ -16,10 +15,6 @@ let groqClient: Groq | null = null;
 function getGroqClient(): Groq {
   if (!groqClient) {
     const apiKey = process.env.GROQ_API_KEY;
-    if (!apiKey) {
-      logger.warn('GROQ_API_KEY not set — Groq AI features disabled');
-      // Return a dummy client — every call will be checked
-    }
     groqClient = new Groq({
       apiKey: apiKey || 'dummy-key',
     });
@@ -33,7 +28,7 @@ export function isGroqAvailable(): boolean {
   return !!process.env.GROQ_API_KEY;
 }
 
-// ─── Smart Party Name Suggestion ──────────────────────────────────────────
+// ─── Party Name Suggestion ─────────────────────────────────────────────────
 
 export interface PartySuggestion {
   suggestedName: string;
@@ -43,7 +38,6 @@ export interface PartySuggestion {
 
 /**
  * Use Groq AI to suggest corrections for misspelled party names.
- * The AI analyses the user's input and returns the closest matching party name(s).
  */
 export async function aiSuggestParties(
   userQuery: string,
@@ -55,8 +49,6 @@ export async function aiSuggestParties(
 
   try {
     const client = getGroqClient();
-
-    // Take party names sample (limit to avoid huge prompts)
     const partySample = knownParties.slice(0, 50);
     const partyList = partySample.map((n, i) => `${i + 1}. "${n}"`).join('\n');
 
@@ -89,14 +81,10 @@ Rules:
     });
 
     const content = response.choices?.[0]?.message?.content || '[]';
-    
-    // Try to parse JSON from the response (it may be wrapped in markdown code blocks)
     const jsonMatch = content.match(/\[[\s\S]*\]/);
     const jsonStr = jsonMatch ? jsonMatch[0] : content;
-    
     const suggestions: PartySuggestion[] = JSON.parse(jsonStr);
-    
-    // Validate and limit
+
     return (suggestions || []).slice(0, maxSuggestions).filter(
       s => s.suggestedName && knownParties.includes(s.suggestedName),
     );
@@ -106,26 +94,36 @@ Rules:
   }
 }
 
-// ─── Natural Language Understanding ────────────────────────────────────────
+// ─── PRIMARY: AI Process Query (Full NLU + Response) ──────────────────────
 
-export interface NluResult {
+export interface AiQueryResult {
+  /** One of: dashboard, invoice, ledger, customer, stock, payment, help, unknown */
   intent: string;
-  partyName?: string;
-  itemName?: string;
-  reportType?: string;
-  dateFrom?: string;
-  dateTo?: string;
+  /** Extracted party/customer name (or null) */
+  partyName: string | null;
+  /** Extracted stock item name (or null) */
+  itemName: string | null;
+  /** Report type for deeper context: ledger, invoice, statement, outstanding */
+  reportType: string | null;
+  /** Friendly conversational response in Hinglish/Hindi/English */
+  response: string;
+  /** Confidence 0-1 */
   confidence: number;
+  /** Any error message from AI processing */
+  error?: string;
 }
 
 /**
- * Use Groq AI to enhance natural language understanding.
- * Falls back gracefully if Groq is unavailable.
+ * THE PRIMARY BRAIN — processes ANY user query and returns:
+ * - intent (what action to take)
+ * - extracted entities (party name, item, etc.)
+ * - a friendly conversational response in the user's language
+ *
+ * Falls back gracefully if Groq is unavailable (returns null).
  */
-export async function aiDetectIntent(
-  userText: string,
-): Promise<NluResult | null> {
+export async function aiProcessQuery(userText: string): Promise<AiQueryResult | null> {
   if (!isGroqAvailable()) return null;
+  if (!userText || userText.trim().length === 0) return null;
 
   try {
     const client = getGroqClient();
@@ -135,23 +133,58 @@ export async function aiDetectIntent(
       messages: [
         {
           role: 'system',
-          content: `You are a Tally accounting bot NLP engine. Parse the user's Hinglish/English message.
+          content: `You are the AI brain of a Tally accounting Telegram bot named TallySync.
+Your user speaks Hindi, English, or Hinglish (mix of both).
+
+Your job:
+1. UNDERSTAND what the user wants
+2. EXTRACT the key information
+3. GENERATE a friendly conversational response in the user's language
+
+The bot can:
+- Show DASHBOARD (today's sales, purchases, receipts, payments, outstanding)
+- Show INVOICE/BILL for a party (send bill, view invoice)
+- Show LEDGER/HISAB for a party (full transaction history)
+- Show CUSTOMER/PARTY details (balance, outstanding, last payment)
+- Show STOCK/MAL details (current stock, rate, value)
+- Help (explain how to use the bot)
 
 Return ONLY a JSON object with these fields:
-- intent: one of "dashboard", "invoice", "ledger", "customer", "stock", "payment", "report", "help", "unknown"
-- partyName: if a party/customer name is mentioned (or null)
-- itemName: if a stock item is mentioned (or null)
-- reportType: "ledger", "invoice", "statement", "outstanding" (or null)
-- dateFrom: ISO date string if mentioned (or null)
-- dateTo: ISO date string if mentioned (or null)
-- confidence: number 0-1
+{
+  "intent": "dashboard" | "invoice" | "ledger" | "customer" | "stock" | "help" | "unknown",
+  "partyName": string | null,
+  "itemName": string | null,
+  "reportType": "ledger" | "invoice" | "statement" | "outstanding" | null,
+  "response": "Friendly reply to user (in their language, mix of Hindi/English)",
+  "confidence": 0.95
+}
 
-Examples:
-"Bhoparam nimbawas bill bhej" → {"intent":"invoice","partyName":"Bhoparam Nimbawas","reportType":"invoice","confidence":0.95}
-"Mukesh ka hisab dikhao" → {"intent":"ledger","partyName":"Mukesh","reportType":"ledger","confidence":0.95}
-"aaj ka sales" → {"intent":"dashboard","confidence":0.8}
-"stock me kitna maal hai" → {"intent":"stock","confidence":0.9}
-"dashboard" → {"intent":"dashboard","confidence":0.95}`,
+EXAMPLES:
+
+User: "Bhoparam nimbawas bill bhej"
+→ {"intent":"invoice","partyName":"Bhoparam Nimbawas","itemName":null,"reportType":"invoice","response":"🧾 Bhoparam Nimbawas ka invoice dhoondh raha hoon...","confidence":0.95}
+
+User: "Mukesh ka hisab dikhao"
+→ {"intent":"ledger","partyName":"Mukesh","itemName":null,"reportType":"ledger","response":"📒 Mukesh ka ledger dikha raha hoon... kaunsa period chahiye?","confidence":0.95}
+
+User: "aaj ka sales kitna hua"
+→ {"intent":"dashboard","partyName":null,"itemName":null,"reportType":null,"response":"📊 Aaj ka dashboard check kar raha hoon...","confidence":0.9}
+
+User: "hello"
+→ {"intent":"help","partyName":null,"itemName":null,"reportType":null,"response":"Namaste! 👋 Main TallySync AI bot hoon. Aap kya dekhna chahenge? Jaise: 'Mukesh ka balance', 'Aaj ka sales', 'Bhoparam ka bill bhej'","confidence":0.9}
+
+User: "stock me cement kitna hai"
+→ {"intent":"stock","partyName":null,"itemName":"Cement","reportType":null,"response":"📦 Cement ka stock check kar raha hoon...","confidence":0.95}
+
+User: "kaisa hai"
+→ {"intent":"help","partyName":null,"itemName":null,"reportType":null,"response":"Main theek hoon! 🎉 Aap kya dekhna chahenge? Kisi party ka balance, ledger, bill, ya aaj ka dashboard?","confidence":0.7}
+
+IMPORTANT RULES:
+- Always respond in the user's language (Hinglish/Hindi mix is best)
+- Keep responses SHORT and FRIENDLY (1-2 lines max)
+- If the user mentions a party/customer name, extract it EVEN if misspelled
+- If you can't figure out what they want, set intent to "help" and ask them
+- NEVER make up data — just set the correct intent for the action handler`,
         },
         {
           role: 'user',
@@ -159,43 +192,46 @@ Examples:
         },
       ],
       temperature: 0.1,
-      max_tokens: 300,
+      max_tokens: 500,
     });
 
     const content = response.choices?.[0]?.message?.content || '{}';
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     const jsonStr = jsonMatch ? jsonMatch[0] : content;
     
-    const result: NluResult = JSON.parse(jsonStr);
+    const result: AiQueryResult = JSON.parse(jsonStr);
+    
+    // Validate result
+    if (!result.intent) {
+      return {
+        intent: 'unknown',
+        partyName: null,
+        itemName: null,
+        reportType: null,
+        response: 'Samajh nahi aaya. Kya dekhna chahenge? Jaise: "Mukesh ka balance", "Aaj ka sales", "Bhoparam ka bill"',
+        confidence: 0,
+      };
+    }
+
+    // Clean party name (capitalize first letter properly)
+    if (result.partyName) {
+      result.partyName = result.partyName.trim();
+    }
+    if (result.itemName) {
+      result.itemName = result.itemName.trim();
+    }
+
     return result;
   } catch (err: any) {
-    logger.warn('Groq AI intent detection failed', { error: err?.message });
-    return null;
+    logger.error('Groq AI processQuery failed', { error: err?.message });
+    return {
+      intent: 'unknown',
+      partyName: null,
+      itemName: null,
+      reportType: null,
+      response: '⚠️ Kuch technical issue aaya. Phir se try karo ya /help use karo.',
+      confidence: 0,
+      error: err?.message,
+    };
   }
-}
-
-// ─── Smart Suggestion Formatter ───────────────────────────────────────────
-
-/**
- * Build a user-friendly smart suggestion message using both fuzzy + AI results.
- */
-export function formatAiSuggestionMessage(
-  userQuery: string,
-  suggestions: PartySuggestion[],
-): string | null {
-  if (!suggestions || suggestions.length === 0) return null;
-
-  const lines = suggestions.map((s, i) => {
-    const confEmoji = s.confidence === 'high' ? '✅' : s.confidence === 'medium' ? '🤔' : '❓';
-    return `   ${i + 1}. *${s.suggestedName}* ${confEmoji} — ${s.reason}`;
-  });
-
-  return [
-    `❌ No exact match found for *${userQuery}*.`,
-    '',
-    '🤖 *AI Suggestions:*',
-    ...lines,
-    '',
-    'Select one above, or try typing more carefully 👇',
-  ].join('\n');
 }

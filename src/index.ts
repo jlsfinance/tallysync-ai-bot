@@ -444,12 +444,74 @@ bot.on('text', async (ctx) => {
     }
 
     default:
-      // No active state – route by detected intent
+      // No active state – try AI first, then route by detected intent
       break;
   }
 
-  // ── Route by intent ──
-  switch (intent) {
+  // ── AI-Powered Intent Detection (Primary) ──
+  let aiResponseText: string | null = null;
+  let aiPartyName: string | null = null;
+  let aiItemName: string | null = null;
+  let aiIntent: string | null = null;
+  let aiReportType: string | null = null;
+  let aiConfidence = 0;
+
+  try {
+    const { aiProcessQuery, isGroqAvailable } = await import('./services/groqAi');
+    if (isGroqAvailable()) {
+      const aiResult = await aiProcessQuery(text);
+      if (aiResult && aiResult.confidence > 0.5) {
+        aiResponseText = aiResult.response;
+        aiPartyName = aiResult.partyName;
+        aiItemName = aiResult.itemName;
+        aiIntent = aiResult.intent;
+        aiReportType = aiResult.reportType;
+        aiConfidence = aiResult.confidence;
+        logger.debug('AI processed query', { chatId, intent: aiIntent, partyName: aiPartyName, confidence: aiConfidence });
+      }
+    }
+  } catch {
+    // Groq not available, fall through to regex
+  }
+
+  // Send AI's friendly response first (if available)
+  if (aiResponseText) {
+    await ctx.replyWithMarkdown(aiResponseText);
+  }
+
+  // ── Determine final intent ──
+  let finalIntent = Intent.UNKNOWN;
+  let finalPartyName: string | undefined;
+  let finalItemName: string | undefined;
+
+  if (aiIntent && aiConfidence > 0.5) {
+    // Use AI-determined intent
+    const intentMap: Record<string, Intent> = {
+      'dashboard': Intent.DASHBOARD,
+      'invoice': Intent.INVOICE,
+      'ledger': Intent.LEDGER,
+      'customer': Intent.CUSTOMER,
+      'stock': Intent.STOCK,
+      'payment': Intent.PAYMENT,
+      'help': Intent.HELP,
+      'report': Intent.REPORT,
+    };
+    finalIntent = intentMap[aiIntent] || Intent.UNKNOWN;
+    if (aiPartyName) finalPartyName = aiPartyName;
+    if (aiItemName) finalItemName = aiItemName;
+  } else {
+    // Fall back to regex-based intent detection
+    const fallbackResult = detectIntent(text);
+    finalIntent = fallbackResult.intent;
+    if (fallbackResult.entities.party_name) finalPartyName = fallbackResult.entities.party_name;
+    if (fallbackResult.entities.item_name) finalItemName = fallbackResult.entities.item_name;
+    
+    // If AI gave a low-confidence response, still show it
+    if (!aiResponseText && finalIntent === Intent.UNKNOWN) {
+      // Completely unknown - ask for help
+    }
+  }
+  switch (finalIntent) {
     case Intent.START:
       return startCommand(ctx);
 
@@ -461,16 +523,8 @@ bot.on('text', async (ctx) => {
 
     case Intent.INVOICE:
     case Intent.VOUCHER: {
-      // If party name was extracted, search directly; else ask
-      if (entities.party_name) {
-        return searchAndShowParties(ctx, entities.party_name);
-      }
-      if (entities.voucher_number || entities.invoice_number) {
-        // Could search by voucher number directly
-        await ctx.replyWithMarkdown(
-          `🔍 *Searching for voucher #${entities.voucher_number || entities.invoice_number}*…\n\nVoucher-level search coming soon. Please search by party name instead.`,
-        );
-        return;
+      if (finalPartyName) {
+        return searchAndShowParties(ctx, finalPartyName);
       }
       // Fallback: strip known keywords to extract party name
       const cleanName = text
@@ -486,82 +540,55 @@ bot.on('text', async (ctx) => {
     case Intent.LEDGER:
     case Intent.CUSTOMER:
     case Intent.BALANCE: {
-      if (entities.party_name) {
-        // Determine whether to do ledger or customer lookup
-        if (intent === Intent.LEDGER) {
-          return searchAndShowPartiesForLedger(ctx, entities.party_name);
+      if (finalPartyName) {
+        if (finalIntent === Intent.LEDGER) {
+          return searchAndShowPartiesForLedger(ctx, finalPartyName);
         }
-        return searchAndShowCustomerParties(ctx, entities.party_name);
+        return searchAndShowCustomerParties(ctx, finalPartyName);
       }
-      // Check if the whole text looks like a party name
-      const { isNameQuery } = await import('./services/intentDetector');
-      if (isNameQuery(text)) {
-        // Could be a party name – show as customer
-        return searchAndShowCustomerParties(ctx, text);
-      }
-      // Fallback: strip known keywords to extract party name
+      // Fallback: strip known keywords
       const cleanedText = text
         .replace(/\b(hisab|khata|ledger|balance|baaki|baqi|dikha[o]?|bhej[o]?|nikal|send|show|ka|ke|ki|ko|se|ne|do|de|lao|party|customer|gahak)\b/gi, '')
         .replace(/\s+/g, ' ')
         .trim();
       if (cleanedText && cleanedText.length >= 2) {
-        const lookupFn = intent === Intent.LEDGER ? searchAndShowPartiesForLedger : searchAndShowCustomerParties;
+        const lookupFn = finalIntent === Intent.LEDGER ? searchAndShowPartiesForLedger : searchAndShowCustomerParties;
         return lookupFn(ctx, cleanedText);
       }
-      if (intent === Intent.LEDGER) {
+      if (finalIntent === Intent.LEDGER) {
         return ledgerCommand(ctx);
       }
       return customerCommand(ctx);
     }
 
     case Intent.STOCK: {
-      if (entities.item_name) {
-        return searchAndShowStockItems(ctx, entities.item_name);
+      if (finalItemName) {
+        return searchAndShowStockItems(ctx, finalItemName);
       }
       return stockCommand(ctx);
     }
 
     case Intent.PAYMENT: {
-      if (entities.party_name) {
-        return onCustomerPartySelected(ctx, entities.party_name);
-      }
-      await ctx.replyWithMarkdown(
-        `💸 *Payment Search*\n\nPlease tell me the party name, e.g., "ABC ka payment dikhao"`,
-        {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: '🏠 Main Menu', callback_data: 'start' }],
-            ],
-          },
-        },
-      );
-      return;
-    }
-
-    case Intent.REPORT: {
-      if (entities.party_name) {
-        return onCustomerPartySelected(ctx, entities.party_name);
+      if (finalPartyName) {
+        return onCustomerPartySelected(ctx, finalPartyName);
       }
       return dashboardCommand(ctx);
     }
 
-    case Intent.SEARCH: {
-      if (entities.party_name) {
-        return searchAndShowCustomerParties(ctx, entities.party_name);
+    case Intent.REPORT: {
+      if (finalPartyName) {
+        return onCustomerPartySelected(ctx, finalPartyName);
       }
-      if (entities.item_name) {
-        return searchAndShowStockItems(ctx, entities.item_name);
-      }
-      // Generic search: show customer search
-      return customerCommand(ctx);
+      return dashboardCommand(ctx);
     }
 
     case Intent.UNKNOWN:
     default: {
-      // Try a last-resort: maybe it's just a party name
+      // If AI already gave a response, the user saw it — no need to repeat
+      if (aiResponseText) return;
+      // Last-resort: maybe it's just a party name
       const { isNameQuery } = await import('./services/intentDetector');
       if (isNameQuery(text) || text.split(/\s+/).length <= 3) {
-        // Show customer info as most likely interpretation
         return searchAndShowCustomerParties(ctx, text);
       }
       await ctx.replyWithMarkdown(
