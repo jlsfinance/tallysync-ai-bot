@@ -63,15 +63,16 @@ export interface VoucherRecord {
 export interface StockItemRecord {
   id: string;
   company_id?: string;
-  stock_item_name?: string;
   name?: string;
-  hsn_code?: string;
   unit?: string;
-  quantity?: number;
-  rate?: number;
-  tax_rate?: number;
-  amount?: number;
+  hsn_code?: string;
+  current_stock?: number;
   opening_stock?: number;
+  rate?: number;
+  gst_rate?: number;
+  stock_group?: string;
+  opening_value?: number;
+  closing_value?: number;
   is_deleted?: boolean;
   [key: string]: any;
 }
@@ -80,10 +81,9 @@ export interface VoucherLedgerEntry {
   id: string;
   voucher_id?: string;
   company_id?: string;
-  name?: string;
+  ledger_name?: string;
   amount?: number;
   is_debit?: boolean;
-  party_ledger_name?: string;
   [key: string]: any;
 }
 
@@ -303,9 +303,9 @@ export async function searchStockItems(
     const { data, error } = await supabase
       .from('stock_items')
       .select('*')
-      .ilike('stock_item_name', `%${query}%`)
+      .ilike('name', `%${query}%`)
       .eq('is_deleted', false)
-      .order('stock_item_name', { ascending: true })
+      .order('name', { ascending: true })
       .limit(limit);
 
     if (error) return { data: null, error: error.message };
@@ -327,9 +327,9 @@ export async function getLowStockItems(
     const { data, error } = await supabase
       .from('stock_items')
       .select('*')
-      .lt('quantity', threshold)
+      .lt('current_stock', threshold)
       .eq('is_deleted', false)
-      .order('quantity', { ascending: true })
+      .order('current_stock', { ascending: true })
       .limit(limit);
 
     if (error) return { data: null, error: error.message };

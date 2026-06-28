@@ -266,16 +266,16 @@ export async function searchPartiesFuzzy(
 export async function searchStockItemsFuzzy(
   query: string,
   maxResults: number = 15,
-): Promise<FuzzyMatchResult<{ id: string; stock_item_name: string; hsn_code?: string; unit?: string }>[]> {
+): Promise<FuzzyMatchResult<{ id: string; name: string; hsn_code?: string; unit?: string }>[]> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from('stock_items')
-    .select('id, stock_item_name, hsn_code, unit, quantity, rate, tax_rate')
+    .select('id, name, hsn_code, unit, current_stock, rate, gst_rate')
     .eq('is_deleted', false);
 
   if (error || !data) return [];
 
-  return fuzzySearch(query, data, ['stock_item_name'], { maxResults });
+  return fuzzySearch(query, data, ['name'], { maxResults });
 }
 
 /**
