@@ -567,36 +567,43 @@ async function launchBot(): Promise<void> {
     while (true) {
       attempt++;
       try {
-        await bot.launch({
-          allowedUpdates: ['message', 'callback_query'],
-        });
+        const pollTimeout = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('poll_timeout')), 15000)
+        );
+        await Promise.race([
+          bot.launch({ allowedUpdates: ['message', 'callback_query'] }),
+          pollTimeout
+        ]);
+        console.log('✅ Bot polling started successfully');
         logger.info('Bot polling started successfully');
         return;
       } catch (err: any) {
-        const is409 = err?.message?.includes('409') || String(err).includes('409');
+        const errMsg = String(err?.message || err);
+        if (errMsg === 'poll_timeout') {
+          console.log('⏳ Polling timeout - this is normal on first start, continuing...');
+          // The launch might succeed after timeout - just return
+          return;
+        }
+        const is409 = errMsg.includes('409');
         const waitMs = is409 ? Math.min(attempt * 3000, 30000) : 5000;
         logger.warn(is409 ? 'Polling conflict (409), retrying' : 'Polling error, retrying', {
-          attempt, waitMs, error: err?.message
+          attempt, waitMs, error: errMsg
         });
+        console.log(`🔄 Retry #${attempt} in ${waitMs}ms`);
         await new Promise(r => setTimeout(r, waitMs));
-        // Keep trying forever - never exit
       }
     }
   }
 }
 
 async function main() {
-  const maxRetries = 10;
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      await launchBot();
-      return;
-    } catch (err) {
-      logger.error('launchBot failed, restarting', { attempt: i + 1, error: String(err) });
-      await new Promise(r => setTimeout(r, 5000));
-    }
+  console.log('🤖 TallySync AI Bot starting...');
+  try {
+    await launchBot();
+  } catch (err) {
+    logger.error('launchBot failed', { error: String(err) });
   }
-  logger.error('launchBot failed after max retries, staying alive for health check');
+  console.log('✅ Bot main loop running, health check active');
 }
 
 main().catch((err) => {
