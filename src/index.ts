@@ -562,8 +562,10 @@ async function launchBot(): Promise<void> {
     // Random delay to avoid race with stale instances
     await new Promise(r => setTimeout(r, 2000 + Math.random() * 4000));
 
-    // Launch with retry on 409 conflict
-    for (let attempt = 1; attempt <= 5; attempt++) {
+    // Launch with retry on 409 conflict (retry forever, never crash)
+    let attempt = 0;
+    while (true) {
+      attempt++;
       try {
         await bot.launch({
           allowedUpdates: ['message', 'callback_query'],
@@ -572,24 +574,34 @@ async function launchBot(): Promise<void> {
         return;
       } catch (err: any) {
         const is409 = err?.message?.includes('409') || String(err).includes('409');
-        if (is409) {
-          logger.warn('Polling conflict (409), retrying', { attempt });
-          await new Promise(r => setTimeout(r, attempt * 3000));
-          continue;
-        }
-        // For non-409 errors, rethrow (will be caught by the outer handler)
-        throw err;
+        const waitMs = is409 ? Math.min(attempt * 3000, 30000) : 5000;
+        logger.warn(is409 ? 'Polling conflict (409), retrying' : 'Polling error, retrying', {
+          attempt, waitMs, error: err?.message
+        });
+        await new Promise(r => setTimeout(r, waitMs));
+        // Keep trying forever - never exit
       }
     }
-    logger.error('Failed to start polling after 5 retries (409 conflict)');
-    // Don't crash - just keep trying in background
-    process.exit(0); // Railway will restart us
   }
 }
 
-launchBot().catch((err) => {
-  logger.error('Failed to launch bot', { error: err?.message, stack: err?.stack });
-  process.exit(1);
+async function main() {
+  const maxRetries = 10;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      await launchBot();
+      return;
+    } catch (err) {
+      logger.error('launchBot failed, restarting', { attempt: i + 1, error: String(err) });
+      await new Promise(r => setTimeout(r, 5000));
+    }
+  }
+  logger.error('launchBot failed after max retries, staying alive for health check');
+}
+
+main().catch((err) => {
+  logger.error('Critical error in main', { error: err?.message, stack: err?.stack });
+  // Stay alive — health check keeps Railway happy
 });
 
 // ---------------------------------------------------------------------------
