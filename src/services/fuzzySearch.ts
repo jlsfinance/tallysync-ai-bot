@@ -253,8 +253,9 @@ export async function searchPartiesFuzzy(
   const supabase = getSupabaseClient();
   let queryBuilder = supabase
     .from('ledgers')
-    .select('id, name, parent, closing_balance')
-    .eq('is_deleted', false);
+    .select('id, name, parent, closing_balance');
+
+  // Note: ledgers table doesn't have is_deleted column
 
   if (companyId) {
     queryBuilder = queryBuilder.eq('company_id', companyId);
@@ -372,8 +373,9 @@ export async function smartSuggestParty(
   const supabase = getSupabaseClient();
   let queryBuilder = supabase
     .from('ledgers')
-    .select('id, name, parent, closing_balance')
-    .eq('is_deleted', false);
+    .select('id, name, parent, closing_balance');
+
+  // Note: ledgers table doesn't have is_deleted column
 
   if (companyId) {
     queryBuilder = queryBuilder.eq('company_id', companyId);
