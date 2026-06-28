@@ -9,6 +9,7 @@ import {
 import { searchItems } from '../services/fuzzySearch';
 import { getSupabaseClient } from '../supabase/client';
 import { formatIndian } from '../utils/formatters';
+import { escapeMd } from '../utils/formatters';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -65,7 +66,7 @@ function formatStockMessage(stock: StockDetails): string {
   const lines: string[] = [
     '📦 *Stock Details*',
     '',
-    `📛 *Name:* ${stock.item_name}`,
+    `📛 *Name:* ${escapeMd(stock.item_name)}`,
   ];
 
   if (stock.item_code) lines.push(`🔢 *Code:* \`${stock.item_code}\``);
@@ -166,7 +167,7 @@ export async function searchAndShowStockItems(
 
     if (items.length === 0) {
       await ctx.replyWithMarkdown(
-        `❌ No items found matching \`${query}\`.`,
+        `❌ No items found matching \`${escapeMd(query)}\`.`,
         {
           reply_markup: {
             inline_keyboard: [
@@ -180,7 +181,7 @@ export async function searchAndShowStockItems(
       return;
     }
 
-    const itemLines = items.map((p, i) => `${i + 1}. ${p.item.item_name} (${p.method})`);
+    const itemLines = items.map((p, i) => `${i + 1}. ${escapeMd(p.item.item_name)} (${p.method})`);
 
     const msg = [
       `📦 *Stock — Item Search*`,

@@ -13,6 +13,7 @@ import {
 import { searchParties } from '../services/fuzzySearch';
 import { getSupabaseClient } from '../supabase/client';
 import { formatDate, formatIndian } from '../utils/formatters';
+import { escapeMd } from '../utils/formatters';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -355,7 +356,7 @@ export async function searchAndShowPartiesForLedger(
     }
 
     const partyLines = parties.map(
-      (p, i) => `${i + 1}. ${p.item.party_name} (${p.method})`,
+      (p, i) => `${i + 1}. ${escapeMd(p.item.party_name)} (${p.method})`,
     );
 
     const msg = [
@@ -393,7 +394,7 @@ export async function onLedgerPartySelected(ctx: Context, partyName: string): Pr
   });
 
   const msg = [
-    `📒 *Ledger — ${partyName}*`,
+    `📒 *Ledger — ${escapeMd(partyName)}*`,
     '',
     'Select a date range for the statement 👇',
   ].join('\n');

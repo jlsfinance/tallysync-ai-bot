@@ -131,7 +131,7 @@ function formatDashboardMessage(data: DashboardData): string {
   const lines: string[] = [];
 
   if (data.companyName) {
-    lines.push(`🏢 *${data.companyName}*`);
+    lines.push(`🏢 *${escapeMd(data.companyName || "")}*`);
   }
   lines.push('📊 *Dashboard — TallyOnMobile*');
   lines.push(`📅 *Date:* ${formatDate(new Date().toISOString())}`);
@@ -161,7 +161,7 @@ function formatDashboardMessage(data: DashboardData): string {
     lines.push('*⚠️ Low Stock Alerts (qty < 10)*');
     for (const item of data.lowStockItems) {
       const unit = item.unit ? ` ${item.unit}` : '';
-      lines.push(`• ${item.name}: *${item.current_stock}*${unit}`);
+      lines.push(`• ${escapeMd(item.name)}: *${item.current_stock}*${unit}`);
     }
   } else {
     lines.push('━━━━━━━━━━━━━━━━━━');
