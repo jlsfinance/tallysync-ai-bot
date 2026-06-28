@@ -8,6 +8,7 @@
  * to avoid the Supabase JS SDK's column-name validation.
  */
 import { getSupabaseClient } from '../supabase/client';
+import { escapeMd } from '../utils/formatters';
 
 // ─── Raw REST helper — bypasses supabase-js column validation ─────────────
 const SUPABASE_REST_URL = 'https://pfqmqpboomwtxgyfqnsn.supabase.co/rest/v1/';
@@ -339,6 +340,97 @@ export async function getVouchersByParty(partyName: string, limitOrOptions: numb
  */
 export function configureFuzzySearch(_key: string): void {
   // No-op: fuzzy search now uses getSupabaseClient() directly
+}
+
+/**
+ * Smart Suggestions — when no exact/close match found, show top N suggestions
+ * Uses a very generous threshold to find similar-sounding names,
+ * then falls back to Groq AI for intelligent name correction.
+ */
+export async function smartSuggestParty(
+  query: string,
+  maxSuggestions: number = 5,
+): Promise<FuzzyMatchResult<{ id: string; name: string; parent?: string; closing_balance?: number }>[]> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('ledgers')
+    .select('id, name, parent, closing_balance')
+    .eq('is_deleted', false)
+    .order('name', { ascending: true });
+
+  if (error || !data) return [];
+
+  // Step 1: Fuzzy search with generous threshold
+  let results = fuzzySearch(query, data, ['name'], {
+    levenshteinThreshold: 5,
+    trigramThreshold: 0.15,
+    maxResults: maxSuggestions,
+  });
+
+  // Step 2: If nothing found, try Groq AI for intelligent suggestions
+  if (results.length === 0) {
+    try {
+      const { aiSuggestParties } = await import('./groqAi');
+      const partyNames = data.map(p => p.name);
+      const aiSuggestions = await aiSuggestParties(query, partyNames, maxSuggestions);
+      
+      if (aiSuggestions.length > 0) {
+        // Map AI suggestions back to actual party data
+        results = aiSuggestions
+          .map(s => {
+            const party = data.find(p => p.name === s.suggestedName);
+            if (!party) return null;
+            const confScore = s.confidence === 'high' ? 85 : s.confidence === 'medium' ? 60 : 40;
+            return {
+              item: party,
+              score: confScore,
+              method: 'soundex' as const, // closest match to 'AI suggested'
+              matchedField: 'name',
+              highlighted: party.name,
+            };
+          })
+          .filter((r): r is NonNullable<typeof r> => r !== null);
+      }
+    } catch {
+      // Groq not available, fuzzy results already empty
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Build a smart suggestion message string when no exact parties found.
+ * Returns null if no suggestions available.
+ */
+export function buildSuggestionMessage(
+  query: string,
+  suggestions: FuzzyMatchResult<any>[],
+): string | null {
+  if (!suggestions || suggestions.length === 0) return null;
+
+  const lines = suggestions.map((s, i) => {
+    const name = s.item.name || s.item.party_name || s.item;
+    const methodLabel: Record<string, string> = {
+      exact: '✅ exact',
+      startsWith: '↗️ starts with',
+      contains: '🔍 contains',
+      levenshtein: '✏️ similar',
+      soundex: '🔊 sounds like',
+      trigram: '🔤 close',
+    };
+    const method = methodLabel[s.method] || s.method;
+    return `   ${i + 1}. *${escapeMd(String(name))}* (${method})`;
+  });
+
+  return [
+    `❌ No parties found matching *${escapeMd(query)}*.`,
+    '',
+    '💡 *Did you mean?*',
+    ...lines,
+    '',
+    'Select one of the suggestions above, or try a different name 👇',
+  ].join('\n');
 }
 
 export async function searchAllFuzzy(

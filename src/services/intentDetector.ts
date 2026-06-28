@@ -217,13 +217,17 @@ const INTENT_PATTERNS: IntentPattern[] = [
 
 const PARTY_NAME_PATTERNS = [
   // "ka party_name" / "ki party_name"
-  /(?:party|customer)\s+(?:ka|ke|ki|name|naam)?\s*[:\-]?\s*["']?([A-Za-z\s.&]+?)["']?(?:\s+(?:ka|ke|ki|ko|se|ne|dikha|bhej|nikal))?$/i,
+  /(?:party|customer)\s+(?:ka|ke|ki|name|naam)?\s*[:\\-]?\s*["']?([A-Za-z\s.&]+?)["']?(?:\s+(?:ka|ke|ki|ko|se|ne|dikha|bhej|nikal))?$/i,
   // "party_name ka hisab/ledger"
   /^([A-Za-z\s.&]+?)\s+(?:ka|ke|ki)\s+(?:hisab|khata|ledger|balance|baaki)/i,
   // "hisab/ledger party_name ka"
   /(?:hisab|khata|ledger|balance)\s+(?:dikha|dikhao|bhej|nikal)?\s*["']?([A-Za-z\s.&]+?)["']?\s+(?:ka|ke|ki)\s*$/i,
   // Trailing name after 'ka' / 'ke' / 'ki'
   /\b(?:ka|ke|ki)\s+["']?([A-Za-z\s.&]{3,})["']?\s*$/i,
+  // "X bill bhej" / "X bill dikha" / "X ka bill"
+  /^([A-Za-z\s.&]+?)\s+(?:ka\s+)?bill\s+(?:bhej[o]?|dikha[o]?|nikal|send|show)?$/im,
+  // "X bill"
+  /^([A-Za-z\s.&]+?)\s+bill$/im,
 ];
 
 const ITEM_NAME_PATTERNS = [

@@ -6,7 +6,7 @@ import {
   getSession,
   setState,
 } from '../services/conversation';
-import { searchParties } from '../services/fuzzySearch';
+import { searchParties, smartSuggestParty, buildSuggestionMessage } from '../services/fuzzySearch';
 import { getSupabaseClient } from '../supabase/client';
 import { formatDate, formatVoucherType, formatIndian } from '../utils/formatters';
 import { escapeMd } from '../utils/formatters';
@@ -150,17 +150,31 @@ export async function searchAndShowCustomerParties(
     });
 
     if (parties.length === 0) {
-      await ctx.replyWithMarkdown(
-        `❌ No parties found matching \`${escapeMd(query)}\`.`,
-        {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: '🔍 Try Again', callback_data: 'customer' }],
-              [{ text: '🏠 Main Menu', callback_data: 'start' }],
-            ],
+      // Try smart suggestions
+      const suggestions = await smartSuggestParty(query, 5);
+      const suggestionMsg = buildSuggestionMessage(query, suggestions);
+
+      if (suggestionMsg) {
+        const rows = suggestions.map((match) => {
+          const name = match.item.name;
+          return [{ text: name, callback_data: `cust_party:${name}` }];
+        });
+        rows.push([{ text: '🔍 Try Again', callback_data: 'customer' }]);
+        rows.push([{ text: '🏠 Main Menu', callback_data: 'start' }]);
+        await ctx.replyWithMarkdown(suggestionMsg, { reply_markup: { inline_keyboard: rows } });
+      } else {
+        await ctx.replyWithMarkdown(
+          `❌ No parties found matching \`${escapeMd(query)}\`.`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '🔍 Try Again', callback_data: 'customer' }],
+                [{ text: '🏠 Main Menu', callback_data: 'start' }],
+              ],
+            },
           },
-        },
-      );
+        );
+      }
       return;
     }
 

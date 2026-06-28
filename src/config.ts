@@ -10,6 +10,7 @@ export interface Config {
   SUPABASE_SERVICE_KEY: string;
   PORT: number;
   NODE_ENV: string;
+  GROQ_API_KEY?: string;
 }
 
 function requireEnv(key: string): string {
@@ -49,6 +50,7 @@ const config: Config = Object.freeze({
   SUPABASE_SERVICE_KEY,
   PORT,
   NODE_ENV,
+  GROQ_API_KEY: process.env.GROQ_API_KEY || undefined,
 });
 
 export default config;

@@ -6,7 +6,7 @@ import {
   getSession,
   setState,
 } from '../services/conversation';
-import { searchItems } from '../services/fuzzySearch';
+import { searchItems, smartSuggestParty, buildSuggestionMessage } from '../services/fuzzySearch';
 import { getSupabaseClient } from '../supabase/client';
 import { formatIndian } from '../utils/formatters';
 import { escapeMd } from '../utils/formatters';
@@ -166,18 +166,33 @@ export async function searchAndShowStockItems(
     });
 
     if (items.length === 0) {
-      await ctx.replyWithMarkdown(
-        `❌ No items found matching \`${escapeMd(query)}\`.`,
-        {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: '🔍 Try Again', callback_data: 'stock' }],
-              [{ text: '⚠️ Low Stock Items', callback_data: 'stock_low' }],
-              [{ text: '🏠 Main Menu', callback_data: 'start' }],
-            ],
+      // Try smart suggestions (reuse party suggester for stock items too)
+      const suggestions = await smartSuggestParty(query, 5);
+      const suggestionMsg = buildSuggestionMessage(query, suggestions);
+
+      if (suggestionMsg) {
+        const rows = suggestions.map((match) => {
+          const name = match.item.name;
+          return [{ text: name, callback_data: `stock_item:${name}` }];
+        });
+        rows.push([{ text: '🔍 Try Again', callback_data: 'stock' }]);
+        rows.push([{ text: '⚠️ Low Stock Items', callback_data: 'stock_low' }]);
+        rows.push([{ text: '🏠 Main Menu', callback_data: 'start' }]);
+        await ctx.replyWithMarkdown(suggestionMsg, { reply_markup: { inline_keyboard: rows } });
+      } else {
+        await ctx.replyWithMarkdown(
+          `❌ No items found matching \`${escapeMd(query)}\`.`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '🔍 Try Again', callback_data: 'stock' }],
+                [{ text: '⚠️ Low Stock Items', callback_data: 'stock_low' }],
+                [{ text: '🏠 Main Menu', callback_data: 'start' }],
+              ],
+            },
           },
-        },
-      );
+        );
+      }
       return;
     }
 
