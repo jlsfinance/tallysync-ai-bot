@@ -554,27 +554,27 @@ async function launchBot(): Promise<void> {
     // Polling mode (Railway / local)
     logger.info('Starting bot in POLLING mode');
 
-    // Start polling in background - NEVER block startup
-    bot.launch({ allowedUpdates: ['message', 'callback_query'] })
-      .then(() => {
-        console.log('✅ Bot polling connected successfully');
+    // Drop any stale session first (don't await - fire and forget)
+    bot.telegram.deleteWebhook({ drop_pending_updates: true }).catch(() => {});
+
+    // Start polling - errors are caught, never crash
+    const startPolling = async () => {
+      try {
+        await bot.launch({ allowedUpdates: ['message', 'callback_query'] });
         logger.info('Bot polling connected');
-      })
-      .catch((err: any) => {
-        const errMsg = String(err?.message || err);
-        console.log(`⚠️ Polling error (non-fatal): ${errMsg.slice(0, 100)}`);
-        logger.warn('Polling error (continuing)', { error: errMsg });
-        // Retry after 30 seconds
-        setTimeout(() => {
-          console.log('🔄 Retrying polling connection...');
-          bot.launch({ allowedUpdates: ['message', 'callback_query'] })
-            .then(() => {
-              console.log('✅ Bot polling connected (retry)');
-              logger.info('Bot polling connected (retry)');
-            })
-            .catch(() => {});
-        }, 30000);
-      });
+        console.log('✅ Bot polling connected');
+      } catch (e: any) {
+        const msg = String(e?.message || e);
+        if (msg.includes('409')) {
+          logger.warn('409 conflict - retrying in 30s');
+          setTimeout(startPolling, 30000);
+        } else {
+          logger.error('Polling error:', { error: msg });
+          setTimeout(startPolling, 15000);
+        }
+      }
+    };
+    startPolling();
 
     console.log('✅ Bot started (polling in background)');
     logger.info('Bot started (polling in background)');
