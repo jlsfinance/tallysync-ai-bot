@@ -554,11 +554,31 @@ async function launchBot(): Promise<void> {
     // Polling mode (development / local)
     logger.info('Starting bot in POLLING mode');
 
-    await bot.launch({
-      allowedUpdates: ['message', 'callback_query', 'inline_query'],
-    });
+    // Add random delay to avoid 409 conflict with stale instances
+    const delay = Math.floor(Math.random() * 8000) + 2000;
+    logger.debug('Waiting before polling start', { delayMs: delay });
+    await new Promise(resolve => setTimeout(resolve, delay));
 
-    logger.info('Bot polling started');
+    // Retry with exponential backoff on 409 conflict
+    const maxRetries = 5;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await bot.launch({
+          allowedUpdates: ['message', 'callback_query', 'inline_query'],
+          dropPendingUpdates: attempt > 1,
+        });
+        logger.info('Bot polling started successfully');
+        return; // success
+      } catch (err: any) {
+        if (err?.message?.includes('409') || err?.description?.includes('409')) {
+          logger.warn('Polling conflict (409), retrying', { attempt, maxRetries });
+          await new Promise(resolve => setTimeout(resolve, attempt * 5000));
+          continue;
+        }
+        throw err; // non-409 error, rethrow
+      }
+    }
+    throw new Error('Failed to start polling after max retries due to 409 conflicts');
   }
 }
 
