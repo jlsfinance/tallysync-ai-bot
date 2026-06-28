@@ -1,0 +1,26 @@
+{
+  "name": "tallysync-ai-bot",
+  "version": "1.0.0",
+  "description": "AI-Powered Telegram Bot for TallyOnMobile — Smart Search, Interactive Selection, PDF Reports",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "telegraf": "^4.16.3",
+    "pdfkit": "^0.15.0",
+    "exceljs": "^4.4.0",
+    "dotenv": "^16.4.5",
+    "fast-levenshtein": "^3.0.0",
+    "winston": "^3.13.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/node": "^20.14.0",
+    "@types/pdfkit": "^0.13.4",
+    "ts-node": "^10.9.2"
+  }
+}
