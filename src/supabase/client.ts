@@ -19,6 +19,7 @@ export function getSupabaseClient(): SupabaseClient {
   if (!client) {
     client = createClient(config.SUPABASE_URL, config.SUPABASE_SERVICE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
+      realtime: { params: { eventsPerSecond: 0 } },
     });
   }
   return client;
