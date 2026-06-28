@@ -178,12 +178,16 @@ export async function searchAndShowParties(
   query: string,
 ): Promise<void> {
   const chatId = ctx.chat!.id;
-  logger.info('Invoice: searching parties', { chatId, query });
+  const { getSession } = await import('../services/conversation');
+  const session = getSession(chatId);
+  const companyId = session.companyId;
+
+  logger.info('Invoice: searching parties', { chatId, query, companyId });
 
   await ctx.replyWithMarkdown(`🔍 *Searching parties for:* \`${escapeMd(query)}\`…`);
 
   try {
-    const matches = await searchParties(query, { maxResults: 10 });
+    const matches = await searchParties(query, { maxResults: 10 }, companyId);
     const parties = matches.slice(0, 5);
 
     // Store in session for later reference
@@ -196,7 +200,7 @@ export async function searchAndShowParties(
 
     if (parties.length === 0) {
       // Try smart suggestions
-      const suggestions = await smartSuggestParty(query, 5);
+      const suggestions = await smartSuggestParty(query, 5, companyId);
       const suggestionMsg = buildSuggestionMessage(query, suggestions);
       
       if (suggestionMsg) {

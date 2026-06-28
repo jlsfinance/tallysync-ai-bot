@@ -136,12 +136,16 @@ export async function searchAndShowCustomerParties(
   query: string,
 ): Promise<void> {
   const chatId = ctx.chat!.id;
-  logger.info('Customer: searching parties', { chatId, query });
+  const { getSession } = await import('../services/conversation');
+  const session = getSession(chatId);
+  const companyId = session.companyId;
+
+  logger.info('Customer: searching parties', { chatId, query, companyId });
 
   await ctx.replyWithMarkdown(`🔍 *Searching parties for:* \`${escapeMd(query)}\`…`);
 
   try {
-    const matches = await searchParties(query, { maxResults: 10 });
+    const matches = await searchParties(query, { maxResults: 10 }, companyId);
     const parties = matches.slice(0, 5);
 
     storeSession(chatId, {

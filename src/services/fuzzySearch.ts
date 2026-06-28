@@ -248,13 +248,19 @@ export function fuzzySearch<T extends Record<string, any>>(
 export async function searchPartiesFuzzy(
   query: string,
   maxResults: number = 15,
+  companyId?: string,
 ): Promise<FuzzyMatchResult<{ id: string; name: string; parent?: string; closing_balance?: number }>[]> {
   const supabase = getSupabaseClient();
-  const { data, error } = await supabase
+  let queryBuilder = supabase
     .from('ledgers')
     .select('id, name, parent, closing_balance')
-    .eq('is_deleted', false)
-    .order('name', { ascending: true });
+    .eq('is_deleted', false);
+
+  if (companyId) {
+    queryBuilder = queryBuilder.eq('company_id', companyId);
+  }
+
+  const { data, error } = await queryBuilder.order('name', { ascending: true });
 
   if (error || !data) return [];
 
@@ -267,12 +273,19 @@ export async function searchPartiesFuzzy(
 export async function searchStockItemsFuzzy(
   query: string,
   maxResults: number = 15,
+  companyId?: string,
 ): Promise<FuzzyMatchResult<{ id: string; name: string; hsn_code?: string; unit?: string }>[]> {
   const supabase = getSupabaseClient();
-  const { data, error } = await supabase
+  let queryBuilder = supabase
     .from('stock_items')
     .select('id, name, hsn_code, unit, current_stock, rate, gst_rate')
     .eq('is_deleted', false);
+
+  if (companyId) {
+    queryBuilder = queryBuilder.eq('company_id', companyId);
+  }
+
+  const { data, error } = await queryBuilder;
 
   if (error || !data) return [];
 
@@ -306,32 +319,36 @@ export async function searchVouchersFuzzy(
 /**
  * @deprecated Use searchPartiesFuzzy instead
  */
-export async function searchParties(query: string, maxResultsOrOptions: number | { maxResults?: number; signal?: AbortSignal; additionalFields?: string } = 15): Promise<FuzzyMatchResult<any>[]> {
+export async function searchParties(query: string, maxResultsOrOptions: number | { maxResults?: number; signal?: AbortSignal; additionalFields?: string } = 15, companyId?: string): Promise<FuzzyMatchResult<any>[]> {
   const maxResults = typeof maxResultsOrOptions === 'number' ? maxResultsOrOptions : (maxResultsOrOptions?.maxResults ?? 15);
-  return searchPartiesFuzzy(query, maxResults);
+  return searchPartiesFuzzy(query, maxResults, companyId);
 }
 
 /**
  * @deprecated Use searchStockItemsFuzzy instead  
  */
-export async function searchItems(query: string, maxResultsOrOptions: number | { maxResults?: number; signal?: AbortSignal; additionalFields?: string } = 15): Promise<FuzzyMatchResult<any>[]> {
+export async function searchItems(query: string, maxResultsOrOptions: number | { maxResults?: number; signal?: AbortSignal; additionalFields?: string } = 15, companyId?: string): Promise<FuzzyMatchResult<any>[]> {
   const maxResults = typeof maxResultsOrOptions === 'number' ? maxResultsOrOptions : (maxResultsOrOptions?.maxResults ?? 15);
-  return searchStockItemsFuzzy(query, maxResults);
+  return searchStockItemsFuzzy(query, maxResults, companyId);
 }
 
 /**
  * @deprecated Use searchVouchersFuzzy instead
  */
-export async function getVouchersByParty(partyName: string, limitOrOptions: number | { limit?: number; signal?: AbortSignal } = 20): Promise<any[]> {
+export async function getVouchersByParty(partyName: string, limitOrOptions: number | { limit?: number; signal?: AbortSignal } = 20, companyId?: string): Promise<any[]> {
   const limit = typeof limitOrOptions === 'number' ? limitOrOptions : (limitOrOptions?.limit ?? 20);
   const supabase = getSupabaseClient();
-  const { data } = await supabase
+  let queryBuilder = supabase
     .from('vouchers')
     .select('*')
     .eq('party_ledger_name', partyName)
-    .eq('is_deleted', false)
-    .order('vch_date', { ascending: false })
-    .limit(limit);
+    .eq('is_deleted', false);
+
+  if (companyId) {
+    queryBuilder = queryBuilder.eq('company_id', companyId);
+  }
+
+  const { data } = await queryBuilder.order('vch_date', { ascending: false }).limit(limit);
   return data || [];
 }
 
@@ -350,13 +367,19 @@ export function configureFuzzySearch(_key: string): void {
 export async function smartSuggestParty(
   query: string,
   maxSuggestions: number = 5,
+  companyId?: string,
 ): Promise<FuzzyMatchResult<{ id: string; name: string; parent?: string; closing_balance?: number }>[]> {
   const supabase = getSupabaseClient();
-  const { data, error } = await supabase
+  let queryBuilder = supabase
     .from('ledgers')
     .select('id, name, parent, closing_balance')
-    .eq('is_deleted', false)
-    .order('name', { ascending: true });
+    .eq('is_deleted', false);
+
+  if (companyId) {
+    queryBuilder = queryBuilder.eq('company_id', companyId);
+  }
+
+  const { data, error } = await queryBuilder.order('name', { ascending: true });
 
   if (error || !data) return [];
 
