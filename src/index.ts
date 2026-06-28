@@ -472,6 +472,14 @@ bot.on('text', async (ctx) => {
         );
         return;
       }
+      // Fallback: strip known keywords to extract party name
+      const cleanName = text
+        .replace(/\b(bill|invoice|bhej[o]?|dikha[o]?|nikal|send|show|ka|ke|ki|ko|se|ne|do|de|lao)\b/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (cleanName && cleanName.length >= 2) {
+        return searchAndShowParties(ctx, cleanName);
+      }
       return invoiceCommand(ctx);
     }
 
@@ -490,6 +498,15 @@ bot.on('text', async (ctx) => {
       if (isNameQuery(text)) {
         // Could be a party name – show as customer
         return searchAndShowCustomerParties(ctx, text);
+      }
+      // Fallback: strip known keywords to extract party name
+      const cleanedText = text
+        .replace(/\b(hisab|khata|ledger|balance|baaki|baqi|dikha[o]?|bhej[o]?|nikal|send|show|ka|ke|ki|ko|se|ne|do|de|lao|party|customer|gahak)\b/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (cleanedText && cleanedText.length >= 2) {
+        const lookupFn = intent === Intent.LEDGER ? searchAndShowPartiesForLedger : searchAndShowCustomerParties;
+        return lookupFn(ctx, cleanedText);
       }
       if (intent === Intent.LEDGER) {
         return ledgerCommand(ctx);
