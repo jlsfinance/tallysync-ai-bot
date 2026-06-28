@@ -370,7 +370,7 @@ export async function searchAndShowPartiesForLedger(
     }
 
     const partyLines = parties.map(
-      (p, i) => `${i + 1}. ${escapeMd(p.item.party_name)} (${p.method})`,
+      (p, i) => `${i + 1}. ${escapeMd(p.item.party_name || p.item.name || '')} (${p.method})`,
     );
 
     const msg = [
@@ -384,7 +384,7 @@ export async function searchAndShowPartiesForLedger(
     ].join('\n');
 
     const rows = parties.map((match) => {
-      const name = match.item.party_name;
+      const name = match.item.name || match.item.party_name;
       return [Markup.button.callback(name, `led_party:${name}`)];
     });
     rows.push([Markup.button.callback('🏠 Main Menu', 'start')]);

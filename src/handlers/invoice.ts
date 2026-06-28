@@ -24,10 +24,10 @@ const VOUCHERS_PER_PAGE = 5;
 
 /** Build inline keyboard for party selection (max 5 per page). */
 function partySelectionKeyboard(
-  parties: Array<{ item: { id: number | string; party_name: string }; score: number }>,
+  parties: Array<{ item: { id: number | string; name?: string; party_name: string }; score: number }>,
 ): ReturnType<typeof Markup.inlineKeyboard> {
   const rows = parties.slice(0, 5).map((match) => {
-    const partyName = match.item.party_name;
+    const partyName = match.item.name || match.item.party_name;
     return [Markup.button.callback(partyName, `inv_party:${partyName}`)];
   });
 
@@ -228,7 +228,7 @@ export async function searchAndShowParties(
     }
 
     const partyLines = parties.map(
-      (p, i) => `${i + 1}. ${escapeMd(p.item.party_name)} (${p.method}, score: ${p.score})`,
+      (p, i) => `${i + 1}. ${escapeMd(p.item.party_name || p.item.name || '')} (${p.method}, score: ${p.score})`,
     );
 
     const msg = [
