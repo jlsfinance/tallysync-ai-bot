@@ -73,27 +73,54 @@ async function fetchLedgerEntries(
   partyName: string,
   dateFrom: string,
   dateTo: string,
+  companyId?: string,
 ): Promise<{ entries: LedgerEntry[]; openingBalance: number; closingBalance: number }> {
   const supabase = getSupabaseClient();
+  const logger = (await import('../logger')).default;
 
-  // Fetch opening balance from ledgers table
-  const { data: ledgerData } = await supabase
+  logger.debug('fetchLedgerEntries', { partyName, dateFrom, dateTo, companyId });
+
+  // Fetch opening balance from ledgers table (uses 'name', not 'party_name')
+  const { data: ledgerData, error: ledgerErr } = await supabase
     .from('ledgers')
-    .select('opening_balance')
-    .ilike('party_name', partyName)
+    .select('opening_balance, name, id')
+    .ilike('name', partyName)
     .limit(1);
 
-  const openingBalance = Number(ledgerData?.[0]?.opening_balance) || 0;
+  if (ledgerErr) {
+    logger.error('fetchLedgerEntries: ledger query error', { error: ledgerErr.message });
+  }
 
-  // Fetch vouchers for this party in date range
-  const { data: vouchers } = await supabase
+  const openingBalance = Number(ledgerData?.[0]?.opening_balance) || 0;
+  const ledgerName = ledgerData?.[0]?.name || partyName;
+
+  logger.debug('fetchLedgerEntries: ledger found', { 
+    ledgerId: ledgerData?.[0]?.id, 
+    name: ledgerName,
+    openingBalance,
+  });
+
+  // Fetch vouchers for this party in date range, scoped to company
+  let vQuery = supabase
     .from('vouchers')
-    .select('voucher_date, voucher_number, voucher_type, amount, party_name')
-    .ilike('party_name', `%${partyName}%`)
+    .select('voucher_date, voucher_number, voucher_type, amount, party_ledger_name')
+    .ilike('party_ledger_name', ledgerName)
     .gte('voucher_date', dateFrom)
-    .lte('voucher_date', dateTo)
+    .lte('voucher_date', dateTo);
+
+  if (companyId) {
+    vQuery = vQuery.eq('company_id', companyId);
+  }
+
+  const { data: vouchers, error: vErr } = await vQuery
     .order('voucher_date', { ascending: true })
     .order('voucher_number', { ascending: true });
+
+  if (vErr) {
+    logger.error('fetchLedgerEntries: voucher query error', { error: vErr.message });
+  }
+
+  logger.debug('fetchLedgerEntries: vouchers found', { count: (vouchers || []).length });
 
   const entries: LedgerEntry[] = [];
   let runningBalance = openingBalance;
@@ -491,10 +518,14 @@ async function generateAndSendLedgerPdf(
   await ctx.replyWithMarkdown('📄 *Generating ledger PDF…* Please wait ⏳');
 
   try {
+    const { getSession } = await import('../services/conversation');
+    const session = getSession(chatId);
+    const companyId = session.companyId;
     const { entries, openingBalance, closingBalance } = await fetchLedgerEntries(
       partyName,
       dateFrom,
       dateTo,
+      companyId,
     );
 
     const fileName = `ledger_${partyName.replace(/[^a-zA-Z0-9]/g, '_')}_${dateFrom}_${dateTo}.pdf`;

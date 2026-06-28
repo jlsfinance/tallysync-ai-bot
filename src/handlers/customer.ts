@@ -30,32 +30,60 @@ interface PartyExtendedInfo {
 /**
  * Fetch extended party info for the customer dashboard.
  */
-async function fetchPartyExtendedInfo(partyName: string): Promise<PartyExtendedInfo | null> {
+async function fetchPartyExtendedInfo(partyName: string, companyId?: string): Promise<PartyExtendedInfo | null> {
   const supabase = getSupabaseClient();
+  const logger = (await import('../logger')).default;
 
-  // Fetch from ledgers table
-  const { data: ledgerData } = await supabase
+  logger.debug('fetchPartyExtendedInfo', { partyName, companyId });
+
+  // Fetch from ledgers table (uses 'name' column, NOT 'party_name')
+  const { data: ledgerData, error: ledgerErr } = await supabase
     .from('ledgers')
     .select('*')
-    .ilike('party_name', partyName)
+    .ilike('name', partyName)
     .limit(1);
+
+  if (ledgerErr) {
+    logger.error('fetchPartyExtendedInfo: ledger query error', { error: ledgerErr.message });
+  }
 
   const ledger = ledgerData?.[0];
 
   if (!ledger) {
+    logger.warn('fetchPartyExtendedInfo: no ledger found', { partyName });
     return null;
   }
 
-  const name = ledger.party_name ?? ledger.name ?? partyName;
+  logger.debug('fetchPartyExtendedInfo: ledger found', { 
+    ledgerId: ledger.id, 
+    name: ledger.name,
+    companyId: ledger.company_id,
+    masterId: ledger.master_id,
+    alterId: ledger.alter_id,
+  });
+
+  const name = ledger.name || partyName;
   const openingBalance = Number(ledger.opening_balance) || 0;
 
-  // Fetch recent vouchers for this party (last 10)
-  const { data: vouchers } = await supabase
+  // Fetch recent vouchers for this party (last 10), scoped to company
+  let vQuery = supabase
     .from('vouchers')
     .select('voucher_number, voucher_date, amount, voucher_type')
-    .ilike('party_name', `%${partyName}%`)
+    .ilike('party_ledger_name', name);
+
+  if (companyId) {
+    vQuery = vQuery.eq('company_id', companyId);
+  }
+
+  const { data: vouchers, error: vErr } = await vQuery
     .order('voucher_date', { ascending: false })
     .limit(10);
+
+  if (vErr) {
+    logger.error('fetchPartyExtendedInfo: voucher query error', { error: vErr.message });
+  }
+
+  logger.debug('fetchPartyExtendedInfo: vouchers found', { count: (vouchers || []).length });
 
   const voucherList = (vouchers ?? []).map((v) => ({
     voucher_number: v.voucher_number || '—',
@@ -258,7 +286,10 @@ export async function onCustomerAction(
   await ctx.replyWithMarkdown(`⏳ *Fetching ${action.replace(/_/g, ' ')} for* \`${partyName}\`…`);
 
   try {
-    const info = await fetchPartyExtendedInfo(partyName);
+    const { getSession } = await import('../services/conversation');
+    const session = getSession(chatId);
+    const companyId = session.companyId;
+    const info = await fetchPartyExtendedInfo(partyName, companyId);
 
     if (!info) {
       await ctx.replyWithMarkdown(

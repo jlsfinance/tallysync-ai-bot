@@ -263,7 +263,10 @@ export async function onPartySelected(ctx: Context, partyName: string): Promise<
   await ctx.replyWithMarkdown(`📄 *Fetching vouchers for* \`${partyName}\`…`);
 
   try {
-    const vouchers = await fuzzyGetVouchers(partyName, { limit: 20 });
+    const { getSession } = await import('../services/conversation');
+    const session = getSession(chatId);
+    const companyId = session.companyId;
+    const vouchers = await fuzzyGetVouchers(partyName, { limit: 20 }, companyId);
     storeResults(chatId, vouchers, { pageSize: VOUCHERS_PER_PAGE });
 
     if (vouchers.length === 0) {
