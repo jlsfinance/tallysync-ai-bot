@@ -536,12 +536,10 @@ healthServer.listen(PORT, () => {
 // ---------------------------------------------------------------------------
 
 async function launchBot(): Promise<void> {
-  // Auto-detect webhook URL on Railway
-  const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN || process.env.RAILWAY_PRIVATE_DOMAIN || '';
-  const webhookUrl = process.env.WEBHOOK_URL || (railwayDomain ? `https://${railwayDomain}` : '');
+  const webhookUrl = process.env.WEBHOOK_URL || '';
 
-  if (webhookUrl && webhookUrl.trim().length > 0) {
-    // Webhook mode (Railway / serverless)
+  if (webhookUrl.trim().length > 0) {
+    // Webhook mode (when a public URL is configured)
     const url = webhookUrl.trim().replace(/\/+$/, '');
     const fullUrl = `${url}/bot${BOT_TOKEN}`;
 
@@ -553,34 +551,39 @@ async function launchBot(): Promise<void> {
       logger.info('Bot webhook started', { port: PORT, webhookUrl: fullUrl });
     });
   } else {
-    // Polling mode (development / local)
+    // Polling mode (Railway / local)
     logger.info('Starting bot in POLLING mode');
 
-    // Add random delay to avoid 409 conflict with stale instances
-    const delay = Math.floor(Math.random() * 8000) + 2000;
-    logger.debug('Waiting before polling start', { delayMs: delay });
-    await new Promise(resolve => setTimeout(resolve, delay));
+    // First, drop any stale webhook/polling session
+    try {
+      await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+    } catch (_) { /* ignore */ }
 
-    // Retry with exponential backoff on 409 conflict
-    const maxRetries = 5;
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    // Random delay to avoid race with stale instances
+    await new Promise(r => setTimeout(r, 2000 + Math.random() * 4000));
+
+    // Launch with retry on 409 conflict
+    for (let attempt = 1; attempt <= 5; attempt++) {
       try {
         await bot.launch({
-          allowedUpdates: ['message', 'callback_query', 'inline_query'],
-          dropPendingUpdates: attempt > 1,
+          allowedUpdates: ['message', 'callback_query'],
         });
         logger.info('Bot polling started successfully');
-        return; // success
+        return;
       } catch (err: any) {
-        if (err?.message?.includes('409') || err?.description?.includes('409')) {
-          logger.warn('Polling conflict (409), retrying', { attempt, maxRetries });
-          await new Promise(resolve => setTimeout(resolve, attempt * 5000));
+        const is409 = err?.message?.includes('409') || String(err).includes('409');
+        if (is409) {
+          logger.warn('Polling conflict (409), retrying', { attempt });
+          await new Promise(r => setTimeout(r, attempt * 3000));
           continue;
         }
-        throw err; // non-409 error, rethrow
+        // For non-409 errors, rethrow (will be caught by the outer handler)
+        throw err;
       }
     }
-    throw new Error('Failed to start polling after max retries due to 409 conflicts');
+    logger.error('Failed to start polling after 5 retries (409 conflict)');
+    // Don't crash - just keep trying in background
+    process.exit(0); // Railway will restart us
   }
 }
 
