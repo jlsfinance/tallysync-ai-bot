@@ -536,10 +536,12 @@ healthServer.listen(PORT, () => {
 // ---------------------------------------------------------------------------
 
 async function launchBot(): Promise<void> {
-  const webhookUrl = process.env.WEBHOOK_URL;
+  // Auto-detect webhook URL on Railway
+  const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN || process.env.RAILWAY_PRIVATE_DOMAIN || '';
+  const webhookUrl = process.env.WEBHOOK_URL || (railwayDomain ? `https://${railwayDomain}` : '');
 
   if (webhookUrl && webhookUrl.trim().length > 0) {
-    // Webhook mode (for Vercel/Netlify serverless)
+    // Webhook mode (Railway / serverless)
     const url = webhookUrl.trim().replace(/\/+$/, '');
     const fullUrl = `${url}/bot${BOT_TOKEN}`;
 
