@@ -9,6 +9,7 @@ import {
 import { searchParties } from '../services/fuzzySearch';
 import { getSupabaseClient } from '../supabase/client';
 import { formatDate, formatVoucherType, formatIndian } from '../utils/formatters';
+import { escapeMd } from '../utils/formatters';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -137,7 +138,7 @@ export async function searchAndShowCustomerParties(
   const chatId = ctx.chat!.id;
   logger.info('Customer: searching parties', { chatId, query });
 
-  await ctx.replyWithMarkdown(`🔍 *Searching parties for:* \`${query}\`…`);
+  await ctx.replyWithMarkdown(`🔍 *Searching parties for:* \`${escapeMd(query)}\`…`);
 
   try {
     const matches = await searchParties(query, { maxResults: 10 });
@@ -150,7 +151,7 @@ export async function searchAndShowCustomerParties(
 
     if (parties.length === 0) {
       await ctx.replyWithMarkdown(
-        `❌ No parties found matching \`${query}\`.`,
+        `❌ No parties found matching \`${escapeMd(query)}\`.`,
         {
           reply_markup: {
             inline_keyboard: [
@@ -164,7 +165,7 @@ export async function searchAndShowCustomerParties(
     }
 
     const partyLines = parties.map(
-      (p, i) => `${i + 1}. ${p.item.party_name} (${p.method})`,
+      (p, i) => `${i + 1}. ${escapeMd(p.item.party_name)} (${p.method})`,
     );
 
     const msg = [

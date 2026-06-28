@@ -2,7 +2,7 @@ import { Context } from 'telegraf';
 import logger from '../logger';
 import { getSupabaseClient } from '../supabase/client';
 import { getSession } from '../services/conversation';
-import { formatIndian, formatDate } from '../utils/formatters';
+import { formatIndian, formatDate, escapeMd } from '../utils/formatters';
 
 const DEBTOR_PARENTS = [
   'Sundry Debtors', 'Debtor', 'DEBTOR',
@@ -60,18 +60,18 @@ async function fetchDashboardData(companyId?: string): Promise<DashboardData> {
 
     // 1. Today's sales
     const { data: salesData } = await voucherQuery('amount').eq('voucher_type', 'Sales');
-    if (salesData) result.todaySales = (salesData as any[]).reduce((s: number, v: any) => s + (Number(v.amount) || 0), 0);
+    if (salesData) result.todaySales = (salesData as any[]).reduce((s, v) => s + (Number(v.amount) || 0), 0);
 
     // 2. Today's purchases
     const { data: purchaseData } = await voucherQuery('amount').eq('voucher_type', 'Purchase');
-    if (purchaseData) result.todayPurchases = (purchaseData as any[]).reduce((s: number, v: any) => s + (Number(v.amount) || 0), 0);
+    if (purchaseData) result.todayPurchases = (purchaseData as any[]).reduce((s, v) => s + (Number(v.amount) || 0), 0);
 
     // 3. Today's receipts & payments
     const { data: receiptData } = await voucherQuery('amount').eq('voucher_type', 'Receipt');
-    if (receiptData) result.receipts = (receiptData as any[]).reduce((s: number, v: any) => s + (Number(v.amount) || 0), 0);
+    if (receiptData) result.receipts = (receiptData as any[]).reduce((s, v) => s + (Number(v.amount) || 0), 0);
 
     const { data: paymentData } = await voucherQuery('amount').eq('voucher_type', 'Payment');
-    if (paymentData) result.payments = (paymentData as any[]).reduce((s: number, v: any) => s + (Number(v.amount) || 0), 0);
+    if (paymentData) result.payments = (paymentData as any[]).reduce((s, v) => s + (Number(v.amount) || 0), 0);
 
     // 4. Outstanding from ledgers using current_balance (the actual balance field)
     let ledgerQuery = supabase.from('ledgers').select('name, parent, current_balance');

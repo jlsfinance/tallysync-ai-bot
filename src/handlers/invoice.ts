@@ -14,6 +14,7 @@ import {
 } from '../services/conversation';
 import { searchParties, getVouchersByParty as fuzzyGetVouchers } from '../services/fuzzySearch';
 import { formatDate, formatVoucherType, formatIndian } from '../utils/formatters';
+import { escapeMd } from '../utils/formatters';
 
 const VOUCHERS_PER_PAGE = 5;
 
@@ -179,7 +180,7 @@ export async function searchAndShowParties(
   const chatId = ctx.chat!.id;
   logger.info('Invoice: searching parties', { chatId, query });
 
-  await ctx.replyWithMarkdown(`🔍 *Searching parties for:* \`${query}\`…`);
+  await ctx.replyWithMarkdown(`🔍 *Searching parties for:* \`${escapeMd(query)}\`…`);
 
   try {
     const matches = await searchParties(query, { maxResults: 10 });
@@ -209,7 +210,7 @@ export async function searchAndShowParties(
     }
 
     const partyLines = parties.map(
-      (p, i) => `${i + 1}. ${p.item.party_name} (${p.method}, score: ${p.score})`,
+      (p, i) => `${i + 1}. ${escapeMd(p.item.party_name)} (${p.method}, score: ${p.score})`,
     );
 
     const msg = [
