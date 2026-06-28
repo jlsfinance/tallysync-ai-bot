@@ -11,6 +11,7 @@
  *   sync_history — Sync logs
  */
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import WebSocket from 'ws';
 import config from '../config';
 
 let client: SupabaseClient | null = null;
@@ -19,7 +20,10 @@ export function getSupabaseClient(): SupabaseClient {
   if (!client) {
     client = createClient(config.SUPABASE_URL, config.SUPABASE_SERVICE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
-      realtime: { params: { eventsPerSecond: 0 } },
+      realtime: {
+        params: { eventsPerSecond: 0 },
+        transport: WebSocket as any,
+      },
     });
   }
   return client;
